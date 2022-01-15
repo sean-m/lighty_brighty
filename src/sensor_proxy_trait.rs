@@ -21,7 +21,11 @@
 
 use zbus::dbus_proxy;
 
-#[dbus_proxy(interface = "net.hadess.SensorProxy")]
+#[dbus_proxy(
+    default_service = "net.hadess.SensorProxy",
+    interface = "net.hadess.SensorProxy",
+    default_path = "/net/hadess/SensorProxy",
+)]
 trait SensorProxy {
     /// ClaimAccelerometer method
     fn claim_accelerometer(&self) -> zbus::Result<()>;
