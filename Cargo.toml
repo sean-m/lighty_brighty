@@ -3,6 +3,14 @@ name = "lighty_brighty"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name="logger"
+path="src/brightness_logger.rs"
+
+#[bin]
+#name=lightybrightyd
+#path=src/main.rs
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]

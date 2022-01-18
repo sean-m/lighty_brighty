@@ -22,30 +22,36 @@
 use zbus::dbus_proxy;
 
 #[dbus_proxy(
+    default_service = "org.freedesktop.PowerManagement",
     interface = "org.kde.Solid.PowerManagement.Actions.BrightnessControl",
     default_path = "/org/kde/Solid/PowerManagement/Actions/BrightnessControl"
 )]
 trait BrightnessControl {
     /// brightness method
+    #[dbus_proxy(name="brightness")]
     fn brightness(&self) -> zbus::Result<i32>;
 
     /// brightnessMax method
+    #[dbus_proxy(name="brightnessMax")]
     fn brightness_max(&self) -> zbus::Result<i32>;
 
     /// brightnessSteps method
+    #[dbus_proxy(name="brightnessSteps")]
     fn brightness_steps(&self) -> zbus::Result<i32>;
 
     /// setBrightness method
+    #[dbus_proxy(name="setBrightness")]
     fn set_brightness(&self, arg_1: i32) -> zbus::Result<()>;
 
     /// setBrightnessSilent method
+    #[dbus_proxy(name="setBrightnessSilent")]
     fn set_brightness_silent(&self, arg_1: i32) -> zbus::Result<()>;
 
     /// brightnessChanged signal
-    #[dbus_proxy(signal)]
+    #[dbus_proxy(signal, name="brightnessChanged")]
     fn brightness_changed(&self, arg_1: i32) -> zbus::Result<()>;
 
     /// brightnessMaxChanged signal
-    #[dbus_proxy(signal)]
+    #[dbus_proxy(signal, name="brightnessMaxChanged")]
     fn brightness_max_changed(&self, arg_1: i32) -> zbus::Result<()>;
 }

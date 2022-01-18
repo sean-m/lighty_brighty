@@ -33,48 +33,39 @@ fn get_light_step(lux_value : f64, step_count : f64) -> f64 {
 async fn main() -> Result<()> {
 
     // iio-sensor-proxy dbus connection
-    let sensor_service   = "net.hadess.SensorProxy";
-    let sensor_path      = "/net/hadess/SensorProxy";
+    let _sensor_service   = "net.hadess.SensorProxy";
+    let _sensor_path      = "/net/hadess/SensorProxy";
 
     let system_conn = Connection::system().await?;
+    let session_conn = Connection::session().await?;
+
     let sensor_proxy = SensorProxyProxy::new(&system_conn).await?;
     sensor_proxy.claim_light().await?;
     
-    let props = zbus::fdo::PropertiesProxy::builder(&system_conn)
-        .destination(sensor_service)?
-        .path(sensor_path)?
-        .build()
-        .await?;
-
-    let mut props_changed = props.receive_properties_changed().await?;
 
     // Plasma desktop brightness control dbus connection
-    let _brightess_control_service = "org.kde.Solid.PowerManagement.Actions.BrightnessControl";
-    let _brightess_control_path = "/org/kde/Solid/PowerManagement/Actions/BrightnessControl";
+    let brightess_control_service = "org.kde.Solid.PowerManagement.Actions.BrightnessControl";
+    let brightess_control_path = "/org/kde/Solid/PowerManagement/Actions/BrightnessControl";
 
-    let session_conn = Connection::session().await?;
     let brightess_control_proxy = BrightnessControlProxy::new(&session_conn).await?;
-        // .destination(brightess_control_service)?
-        // .path(brightess_control_path)?
-        // .build()
-        // .await?;
+    let _brightness_steps = brightess_control_proxy.brightness_steps().await? as f64;
+        
+    let brightness_props = zbus::fdo::PropertiesProxy::builder(&session_conn)
+        .destination(brightess_control_service)?
+        .path(brightess_control_path)?
+        .build()
+        .await?;
+    
 
-    let brightness_steps = brightess_control_proxy.brightness_steps().await? as f64;
+    let mut brightness_changed = brightness_props.receive_properties_changed().await?;
 
     futures_util::try_join!(
         async {
-            while let Some(signal) = props_changed.next().await {
+            while let Some(signal) = brightness_changed.next().await {
                 let args = signal.args()?;
 
-                for (name, _value) in args.changed_properties().iter() {
-                    if name == &"LightLevel" {
-
-                        let lux_value = sensor_proxy.light_level().await?;
-                        println!("LightLevel : {} {}, light step: {}", 
-                            lux_value, 
-                            sensor_proxy.light_level_unit().await?, 
-                            get_light_step(lux_value, brightness_steps));
-                    }
+                for (name, value) in args.changed_properties().iter() {
+                    println!("Property : {}, {:?}", name, value);
                 }
             }
 
