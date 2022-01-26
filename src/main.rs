@@ -13,14 +13,18 @@
 */
 
 use std::cmp;
+
+use crate::kde_powermanagement_suspendsession::SuspendSessionProxy;
 use crate::kde_brightness_control_trait::BrightnessControlProxy;
 use crate::sensor_proxy_trait::SensorProxyProxy;
+
 use zbus::{Connection, Result};
 use futures_util::stream::StreamExt;
 
 
 mod sensor_proxy_trait;
 mod kde_brightness_control_trait;
+mod kde_powermanagement_suspendsession; 
 
 fn get_light_step(lux_value : f64, step_count : f64) -> f64 {
     let lux = lux_value;
@@ -32,7 +36,9 @@ fn get_light_step(lux_value : f64, step_count : f64) -> f64 {
 #[async_std::main]
 async fn main() -> Result<()> {
 
+    //
     // iio-sensor-proxy dbus connection
+    //
     let sensor_service   = "net.hadess.SensorProxy";
     let sensor_path      = "/net/hadess/SensorProxy";
 
@@ -40,6 +46,7 @@ async fn main() -> Result<()> {
     let sensor_proxy = SensorProxyProxy::new(&system_conn).await?;
     sensor_proxy.claim_light().await?;
     
+    // Subscribe to PropertyChanged signal
     let props = zbus::fdo::PropertiesProxy::builder(&system_conn)
         .destination(sensor_service)?
         .path(sensor_path)?
@@ -48,10 +55,9 @@ async fn main() -> Result<()> {
 
     let mut props_changed = props.receive_properties_changed().await?;
 
+    //
     // Plasma desktop brightness control dbus connection
-    let _brightess_control_service = "org.kde.Solid.PowerManagement.Actions.BrightnessControl";
-    let _brightess_control_path = "/org/kde/Solid/PowerManagement/Actions/BrightnessControl";
-
+    //
     let session_conn = Connection::session().await?;
     let brightess_control_proxy = BrightnessControlProxy::new(&session_conn).await?;
 
@@ -66,8 +72,19 @@ async fn main() -> Result<()> {
     let sensitivity = 10.0 as usize; // Threshold that needs to be crossed in lux values before adjusting screen brightness. Hopefully prevents herky jerky changes. TODO: make this an argument
     let skew = 0.8 as f64; // Multiplied to the brightness setting before telling Plasma to change. 80% seems right. TODO: make this an argument
 
-    futures_util::try_join!(
-        async {
+    let mut brightness_changed = brightess_control_proxy.receive_brightness_changed().await?;
+
+    //
+    // Suspend/resume events
+    //
+    let suspend_session_proxy = SuspendSessionProxy::new(&session_conn).await?;
+    let mut resuming_signal = suspend_session_proxy.receive_resuming_from_suspend().await?;
+    
+
+    //
+    // Handle events
+    //
+    let handle_light_sensor_change = async {
             while let Some(signal) = props_changed.next().await {
                 let args = signal.args()?;
 
@@ -114,7 +131,28 @@ async fn main() -> Result<()> {
             }
 
             Ok::<(), zbus::Error>(())
-        }
+        };
+
+
+
+    let handle_resume_event = async {
+            while let Some(_) = resuming_signal.next().await {
+                println!("Resuming from suspend...");
+            }
+            Ok::<(), zbus::Error>(())
+        };
+
+    let handle_brightness_change = async {
+            while let Some(_) = brightness_changed.next().await {
+                println!("Brightness changed...");
+            }
+            Ok::<(), zbus::Error>(())
+        };
+
+    futures_util::try_join!(
+        handle_light_sensor_change,
+        handle_resume_event,
+        handle_brightness_change,
     )?;
 
    Ok(())

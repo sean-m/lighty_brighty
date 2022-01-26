@@ -29,3 +29,4 @@ qdbus ${dbus_interface} ${dbus_addr_path} "${dbus_addr_pow_bright_ctrl}.brightne
 # qdbus net.hadess.SensorProxy /net/hadess/SensorProxy ClaimLight
 # zbus-xmlgen --system net.hadess.SensorProxy /net/hadess/SensorProxy
 # zbus-xmlgen --system org.kde.Solid.PowerManagement /org/kde/Solid/PowerManagement/Actions/BrightnessControl
+# zbus-xmlgen --system org.kde.Solid.PowerManagement /org/kde/Solid/PowerManagement

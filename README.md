@@ -10,3 +10,11 @@ It's gonna use DBus and the iio-sensor-proxy from the Gnome project but really b
 # Links
 [net.hadess.SensorProxy from Gnome project](https://developer-old.gnome.org/iio-sensor-proxy/2.3/gdbus-net.hadess.SensorProxy.html#gdbus-method-net-hadess-SensorProxy.ClaimLight)
 [KDE power management screen brightness dbus](https://userbase.kde.org/KDE_Connect/Tutorials/Useful_commands#Brightness_settings)
+
+# DBus Services
+Suspend/Resume awareness
+Service: org.freedesktop.PowerManagement
+Path: /org/kde/Solid/PowerManagement/Actions/SuspendSession
+Interface: org.kde.Solid.PowerManagement.Actions.SuspendSession
+Signal: resumingFromSuspend
+`zbus-xmlgen --session org.freedesktop.PowerManagement /org/kde/Solid/PowerManagement/Actions/SuspendSession org.kde.Solid.PowerManagement.Actions.SuspendSession`
