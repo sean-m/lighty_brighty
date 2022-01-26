@@ -71,15 +71,16 @@ async fn main() -> Result<()> {
 
     let sensitivity = 10.0 as usize; // Threshold that needs to be crossed in lux values before adjusting screen brightness. Hopefully prevents herky jerky changes. TODO: make this an argument
     let skew = 0.8 as f64; // Multiplied to the brightness setting before telling Plasma to change. 80% seems right. TODO: make this an argument
-
-    let mut brightness_changed = brightess_control_proxy.receive_brightness_changed().await?;
+    
+    //TODO use this to adjust user selected brightness skew
+    // let mut brightness_changed = brightess_control_proxy.receive_brightness_changed().await?;
 
     //
     // Suspend/resume events
     //
     let suspend_session_proxy = SuspendSessionProxy::new(&session_conn).await?;
     let mut resuming_signal = suspend_session_proxy.receive_resuming_from_suspend().await?;
-    
+    let mut suspending_signal = suspend_session_proxy.receive_about_to_suspend().await?;
 
     //
     // Handle events
@@ -133,26 +134,37 @@ async fn main() -> Result<()> {
             Ok::<(), zbus::Error>(())
         };
 
-
+    let handle_suspending_event = async {
+            while let Some(_) = suspending_signal.next().await {
+                sensor_proxy.release_light().await?;
+                
+                //TODO DEBUG println!("Suspending...");
+            }
+            Ok::<(), zbus::Error>(())
+        };
 
     let handle_resume_event = async {
             while let Some(_) = resuming_signal.next().await {
-                println!("Resuming from suspend...");
+                sensor_proxy.claim_light().await?;
+
+                //TODO DEBUG println!("Resuming from suspend...");
             }
             Ok::<(), zbus::Error>(())
         };
 
-    let handle_brightness_change = async {
-            while let Some(_) = brightness_changed.next().await {
-                println!("Brightness changed...");
-            }
-            Ok::<(), zbus::Error>(())
-        };
+    //TODO use this to adjust user selected brightness skew
+    // let handle_brightness_change = async {
+    //         while let Some(_) = brightness_changed.next().await {
+    //             println!("Brightness changed...");
+    //         }
+    //         Ok::<(), zbus::Error>(())
+    //     };
 
     futures_util::try_join!(
         handle_light_sensor_change,
+        handle_suspending_event,
         handle_resume_event,
-        handle_brightness_change,
+        // handle_brightness_change,
     )?;
 
    Ok(())
