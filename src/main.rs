@@ -158,6 +158,31 @@ async fn main() -> Result<()> {
     let mut resuming_signal = suspend_session_proxy.receive_resuming_from_suspend().await?;
     let mut suspending_signal = suspend_session_proxy.receive_about_to_suspend().await?;
 
+
+    // TODO refactor all of this so brightness is handled in one place. Or don't, who cares? None of this needed to be async either and is probably just wasting ram.
+    // This is just to set the brightness on program startup
+    async fn set_brightness<'a>(sensor_proxy: &SensorProxyProxy<'_>, brightess_control_proxy: &BrightnessControlProxy<'_>, skew: f64) -> Result<(), > {
+        
+        let brightness_steps = brightess_control_proxy.brightness_steps().await? as f64;
+        let brightness_max = brightess_control_proxy.brightness_max().await? as f64;
+        let brightness_step_size = brightness_max / brightness_steps;
+
+
+        let lux_value = sensor_proxy.light_level().await? as usize;
+        let proposed_light_step = get_light_step(lux_value as f64, brightness_steps);
+        
+        // Calculate target brightness level
+        let setting = (proposed_light_step * brightness_step_size * skew) as i32;
+        let sensor_unit = sensor_proxy.light_level_unit().await?;
+        assert!(sensor_unit=="lux");
+
+        info!("Adjusting initial brightness setting to step {}/{}, level: {}.", proposed_light_step, brightness_steps, setting);
+        brightess_control_proxy.set_brightness_silent(setting).await?;
+
+        Ok(())
+    }
+    set_brightness(&sensor_proxy, &brightess_control_proxy, skew).await?;
+
     //
     // Handle events
     //
