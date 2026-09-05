@@ -239,12 +239,14 @@ async fn main() -> Result<()> {
                             should_change = true;
                         }
 
-                        // Change threshold met, changing screen brightness.
-                        if paused.load(Ordering::Relaxed) {
-                            if should_change {
-                                debug!("Automatic brightness adjustment paused (multiple displays active); skipping write.");
-                            }
-                        } else if should_change {
+                        let is_paused = paused.load(Ordering::Relaxed);
+                        if !should_change {
+                            // No threshold change; nothing to do either way.
+                        } else if is_paused {
+                            // Change threshold met, but automatic brightness is currently paused.
+                            debug!("Automatic brightness adjustment paused (multiple displays active); skipping write.");
+                        } else {
+                            // Change threshold met, changing screen brightness.
 
                             let current_brightness = brightess_control_proxy.brightness().await? as f64;
                             let brightness_percentage = (current_brightness / brightness_max) * 100.0;
