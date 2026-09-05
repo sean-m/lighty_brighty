@@ -13,12 +13,16 @@
 */
 
 use std::cmp;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
 use regex::Regex;
 use log::{info, error, debug};
 use clap::{Arg, App};
 
 use simplelog::*;
 
+use crate::display_guard::{monitor_displays, DEFAULT_POLL_INTERVAL};
 use crate::kde_powermanagement_suspendsession::SuspendSessionProxy;
 use crate::kde_brightness_control_trait::BrightnessControlProxy;
 use crate::sensor_proxy_trait::SensorProxyProxy;
@@ -27,6 +31,7 @@ use zbus::{Connection, Result};
 use futures_util::stream::StreamExt;
 
 
+mod display_guard;
 mod sensor_proxy_trait;
 mod kde_brightness_control_trait;
 mod kde_powermanagement_suspendsession; 
@@ -43,6 +48,7 @@ async fn main() -> Result<()> {
     //
     // Parse command arguments and configure settings
     //
+    let default_debounce_seconds = display_guard::DEFAULT_DEBOUNCE_SECONDS.to_string();
     let matches = App::new("Lighty Brighty")
         .version("0.2.0")
         .author("Sean McArdle <sean@mcardletech.com>")
@@ -62,6 +68,13 @@ async fn main() -> Result<()> {
             .takes_value(true)
             .help("Log level. Can be one of the following: debug, info, warn (default), error.")
             .default_value("warn")
+            )
+        .arg(
+            Arg::new("debounce-seconds")
+            .long("debounce-seconds")
+            .takes_value(true)
+            .help("Seconds a single display must remain stable before automatic brightness resumes after an external display disconnects. Prevents flapping on dock/undock.")
+            .default_value(&default_debounce_seconds)
             )
         .get_matches();
 
@@ -111,6 +124,29 @@ async fn main() -> Result<()> {
             TermLogger::new(log_level, Config::default(), TerminalMode::Mixed, ColorChoice::Auto),
         ]
     ).unwrap();
+
+    // Seconds a single display must remain stable before automatic brightness
+    // resumes after an external display disconnects (see display_guard module).
+    let debounce_seconds: u64 = match matches.value_of("debounce-seconds") {
+        Some(d) => match d.parse::<u64>() {
+            Ok(n) => n,
+            Err(_e) => {
+                error!("Debounce seconds value must be a non-negative integer. Got: {}", d);
+                return Ok(())
+            }
+        },
+        None => unreachable!("If you got here the default debounce-seconds value parsed by clap didn't work!"),
+    };
+
+    // Shared pause flag: true whenever automatic brightness adjustment should
+    // be skipped, e.g. because more than one display is currently active.
+    let paused = Arc::new(AtomicBool::new(false));
+    let display_monitor_paused = Arc::clone(&paused);
+    async_std::task::spawn(monitor_displays(
+        display_monitor_paused,
+        Duration::from_secs(debounce_seconds),
+        DEFAULT_POLL_INTERVAL,
+    ));
 
 
     //
@@ -203,8 +239,14 @@ async fn main() -> Result<()> {
                             should_change = true;
                         }
 
-                        // Change threshold met, changing screen brightness.
-                        if should_change {
+                        let is_paused = paused.load(Ordering::Relaxed);
+                        if !should_change {
+                            // No threshold change; nothing to do either way.
+                        } else if is_paused {
+                            // Change threshold met, but automatic brightness is currently paused.
+                            debug!("Automatic brightness adjustment paused (multiple displays active); skipping write.");
+                        } else {
+                            // Change threshold met, changing screen brightness.
 
                             let current_brightness = brightess_control_proxy.brightness().await? as f64;
                             let brightness_percentage = (current_brightness / brightness_max) * 100.0;

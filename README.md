@@ -18,3 +18,14 @@ Path: /org/kde/Solid/PowerManagement/Actions/SuspendSession
 Interface: org.kde.Solid.PowerManagement.Actions.SuspendSession
 Signal: resumingFromSuspend
 `zbus-xmlgen --session org.freedesktop.PowerManagement /org/kde/Solid/PowerManagement/Actions/SuspendSession org.kde.Solid.PowerManagement.Actions.SuspendSession`
+
+# Pausing on multiple displays
+Since this is mainly useful for a laptop's own panel, automatic brightness
+adjustment is paused whenever more than one display is active (e.g. when
+docked or connected to a projector). Display topology is polled via
+`kscreen-doctor -j`, which is stable across Plasma versions.
+
+To avoid brightness flapping when displays are briefly unplugged/replugged,
+resuming after going back to a single display requires that state to remain
+stable for a debounce period (default 8 seconds, configurable with
+`--debounce-seconds`).
