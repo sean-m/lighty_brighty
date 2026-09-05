@@ -77,6 +77,19 @@ fn count_active_outputs_from_json(json: &str) -> Result<usize, DisplayGuardError
         .count())
 }
 
+/// Turn a completed `kscreen-doctor -j` process invocation into an active
+/// output count. Separated from the process-spawning code below so it can
+/// be exercised in tests against a canned `Output` without needing the real
+/// `kscreen-doctor` binary or system topology.
+fn parse_kscreen_doctor_output(output: std::process::Output) -> Result<usize, DisplayGuardError> {
+    if !output.status.success() {
+        return Err(DisplayGuardError::NonZeroExit(output.status));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    count_active_outputs_from_json(&stdout)
+}
+
 /// Query `kscreen-doctor -j` and count active (connected+enabled) outputs.
 async fn active_output_count() -> Result<usize, DisplayGuardError> {
     let output = async_std::process::Command::new("kscreen-doctor")
@@ -85,12 +98,7 @@ async fn active_output_count() -> Result<usize, DisplayGuardError> {
         .await
         .map_err(DisplayGuardError::Spawn)?;
 
-    if !output.status.success() {
-        return Err(DisplayGuardError::NonZeroExit(output.status));
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    count_active_outputs_from_json(&stdout)
+    parse_kscreen_doctor_output(output)
 }
 
 /// Result of feeding a new output-count observation into `PauseState`, used
@@ -178,10 +186,16 @@ pub async fn monitor_displays(
     poll_interval: Duration,
 ) {
     let mut state = PauseState::new(debounce);
+    let mut consecutive_failures: u32 = 0;
+    // How many polls to wait between repeated warnings once a failure has
+    // already been logged, so a persistently missing/broken kscreen-doctor
+    // doesn't spam the log on every poll interval.
+    const REPEAT_WARNING_EVERY: u32 = 30;
 
     loop {
         match active_output_count().await {
             Ok(count) => {
+                consecutive_failures = 0;
                 debug!("kscreen-doctor reports {} active output(s).", count);
                 if let Some(transition) = state.observe(count, Instant::now()) {
                     match transition {
@@ -210,10 +224,20 @@ pub async fn monitor_displays(
                 }
             }
             Err(e) => {
-                warn!(
-                    "Could not determine active display count, leaving pause state unchanged: {}",
-                    e
-                );
+                consecutive_failures += 1;
+                if consecutive_failures == 1
+                    || consecutive_failures.is_multiple_of(REPEAT_WARNING_EVERY)
+                {
+                    warn!(
+                        "Could not determine active display count ({} consecutive failure(s)), leaving pause state unchanged: {}",
+                        consecutive_failures, e
+                    );
+                } else {
+                    debug!(
+                        "Could not determine active display count ({} consecutive failure(s)): {}",
+                        consecutive_failures, e
+                    );
+                }
             }
         }
 
@@ -224,6 +248,39 @@ pub async fn monitor_displays(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::process::ExitStatusExt;
+
+    fn fake_output(status_code: i32, stdout: &str) -> std::process::Output {
+        std::process::Output {
+            status: std::process::ExitStatus::from_raw(status_code),
+            stdout: stdout.as_bytes().to_vec(),
+            stderr: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn parse_kscreen_doctor_output_success() {
+        let output = fake_output(0, r#"{"outputs":[{"connected":true,"enabled":true}]}"#);
+        assert_eq!(parse_kscreen_doctor_output(output).unwrap(), 1);
+    }
+
+    #[test]
+    fn parse_kscreen_doctor_output_non_zero_exit_is_an_error() {
+        let output = fake_output(1, "");
+        assert!(matches!(
+            parse_kscreen_doctor_output(output),
+            Err(DisplayGuardError::NonZeroExit(_))
+        ));
+    }
+
+    #[test]
+    fn parse_kscreen_doctor_output_invalid_json_is_an_error() {
+        let output = fake_output(0, "not json");
+        assert!(matches!(
+            parse_kscreen_doctor_output(output),
+            Err(DisplayGuardError::Parse(_))
+        ));
+    }
 
     #[test]
     fn parses_active_outputs_from_json() {

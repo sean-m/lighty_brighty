@@ -48,6 +48,7 @@ async fn main() -> Result<()> {
     //
     // Parse command arguments and configure settings
     //
+    let default_debounce_seconds = display_guard::DEFAULT_DEBOUNCE_SECONDS.to_string();
     let matches = App::new("Lighty Brighty")
         .version("0.2.0")
         .author("Sean McArdle <sean@mcardletech.com>")
@@ -73,7 +74,7 @@ async fn main() -> Result<()> {
             .long("debounce-seconds")
             .takes_value(true)
             .help("Seconds a single display must remain stable before automatic brightness resumes after an external display disconnects. Prevents flapping on dock/undock.")
-            .default_value("8")
+            .default_value(&default_debounce_seconds)
             )
         .get_matches();
 
@@ -126,20 +127,16 @@ async fn main() -> Result<()> {
 
     // Seconds a single display must remain stable before automatic brightness
     // resumes after an external display disconnects (see display_guard module).
-    let mut debounce_seconds = display_guard::DEFAULT_DEBOUNCE_SECONDS;
-    let debounce_str = matches.value_of("debounce-seconds");
-    match debounce_str {
-        Some(d) => {
-            match d.parse::<u64>() {
-                Ok(n) => { debounce_seconds = n; }
-                Err(_e) => {
-                    error!("Debounce seconds value must be a non-negative integer. Got: {}", d);
-                    return Ok(())
-                }
+    let debounce_seconds: u64 = match matches.value_of("debounce-seconds") {
+        Some(d) => match d.parse::<u64>() {
+            Ok(n) => n,
+            Err(_e) => {
+                error!("Debounce seconds value must be a non-negative integer. Got: {}", d);
+                return Ok(())
             }
-        }
-        None => { assert!(false, "If you got here the default debounce-seconds value parsed by clap didn't work!"); }
-    }
+        },
+        None => unreachable!("If you got here the default debounce-seconds value parsed by clap didn't work!"),
+    };
 
     // Shared pause flag: true whenever automatic brightness adjustment should
     // be skipped, e.g. because more than one display is currently active.
@@ -243,8 +240,10 @@ async fn main() -> Result<()> {
                         }
 
                         // Change threshold met, changing screen brightness.
-                        if should_change && paused.load(Ordering::Relaxed) {
-                            debug!("Automatic brightness adjustment paused (multiple displays active); skipping write.");
+                        if paused.load(Ordering::Relaxed) {
+                            if should_change {
+                                debug!("Automatic brightness adjustment paused (multiple displays active); skipping write.");
+                            }
                         } else if should_change {
 
                             let current_brightness = brightess_control_proxy.brightness().await? as f64;
